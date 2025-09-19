@@ -1,5 +1,4 @@
 document.addEventListener("DOMContentLoaded", function () {
-  const propertyCards = document.querySelectorAll(".property-card");
   const priceRangeInput = document.getElementById("priceRangeInput");
   const priceValue = document.getElementById("priceValue");
   const filterCheckboxes = document.querySelectorAll(
@@ -8,6 +7,8 @@ document.addEventListener("DOMContentLoaded", function () {
   const priceRadioButtons = document.querySelectorAll(
     '.filter-section input[type="radio"]'
   );
+  const locationSearch = document.getElementById("location-search");
+  const locationSuggestions = document.getElementById("location-suggestions");
 
   const details = {
     mainImage: document.getElementById("details-main-image"),
@@ -17,6 +18,68 @@ document.addEventListener("DOMContentLoaded", function () {
     overview: document.getElementById("details-overview"),
     features: document.getElementById("details-features"),
   };
+
+  let states = [];
+
+  // Busca estados da API do IBGE e popula as sugestões
+  fetch(
+    "https://servicodados.ibge.gov.br/api/v1/localidades/estados?orderBy=nome"
+  )
+    .then((response) => response.json())
+    .then((data) => {
+      states = data.map((estado) => estado.nome);
+    });
+
+  // Mostra sugestões ao focar ou digitar
+  locationSearch.addEventListener("input", () =>
+    updateLocationSuggestions(locationSearch.value)
+  );
+  locationSearch.addEventListener("focus", () =>
+    updateLocationSuggestions(locationSearch.value)
+  );
+
+  function updateLocationSuggestions(filter) {
+    if (filter.length < 1) {
+      locationSuggestions.style.display = "none";
+      return;
+    }
+
+    const filteredStates = states.filter((state) =>
+      state.toLowerCase().includes(filter.toLowerCase())
+    );
+
+    locationSuggestions.innerHTML = "";
+    if (filteredStates.length > 0) {
+      locationSuggestions.style.display = "block";
+      filteredStates.forEach((state) => {
+        const suggestionItem = document.createElement("div");
+        suggestionItem.classList.add("suggestion-item");
+        suggestionItem.textContent = state;
+        suggestionItem.addEventListener("click", () => {
+          locationSearch.value = state;
+          locationSuggestions.style.display = "none";
+          filterProperties();
+        });
+        locationSuggestions.appendChild(suggestionItem);
+      });
+    } else {
+      locationSuggestions.style.display = "none";
+    }
+  }
+
+  // Esconde sugestões ao clicar fora
+  document.addEventListener("click", function (e) {
+    if (!locationSearch.contains(e.target)) {
+      locationSuggestions.style.display = "none";
+    }
+  });
+
+  // Limpa o filtro de localização se o campo for limpo
+  locationSearch.addEventListener("change", () => {
+    if (locationSearch.value === "") {
+      filterProperties();
+    }
+  });
 
   function updateDetails(card) {
     const title = card.querySelector(".card-title").textContent;
@@ -29,18 +92,8 @@ document.addEventListener("DOMContentLoaded", function () {
     details.price.innerHTML = price;
     details.mainImage.src = mainImage;
 
-    // Aqui você pode adicionar lógicas mais complexas para buscar
-    // e atualizar a visão geral, features e outras abas.
-    // Por enquanto, vamos usar um texto genérico.
     const overviewText = `Detalhes sobre ${title}. Experience a peaceful escape at this property, a modern retreat set on a quiet hillside with stunning views.`;
     details.overview.querySelector("p").textContent = overviewText;
-
-    // Exemplo de como atualizar as features (você precisaria ter esses dados nos cards)
-    // const featuresData = card.parentElement.dataset.features; // Ex: "6 Quartos,4 Banheiros,1 Garagem"
-    // if(featuresData) {
-    //   const featuresArray = featuresData.split(',');
-    //   details.features.innerHTML = featuresArray.map(f => `<span>${f}</span>`).join('');
-    // }
   }
 
   function filterProperties() {
@@ -48,10 +101,12 @@ document.addEventListener("DOMContentLoaded", function () {
       .filter((checkbox) => checkbox.checked)
       .map((checkbox) => checkbox.id);
 
-    let priceFilter = document.querySelector(
+    let priceFilterElement = document.querySelector(
       'input[name="priceRange"]:checked'
-    ).id;
+    );
+    let priceFilter = priceFilterElement ? priceFilterElement.id : "custom";
     const customPrice = parseInt(priceRangeInput.value, 10);
+    const locationQuery = locationSearch.value.toLowerCase();
 
     const propertyListings = document.querySelectorAll(
       "#property-listings .col-md-6"
@@ -60,9 +115,13 @@ document.addEventListener("DOMContentLoaded", function () {
     propertyListings.forEach((property) => {
       const propertyType = property.dataset.type;
       const propertyPrice = parseInt(property.dataset.price, 10);
+      const propertyState = (property.dataset.state || "").toLowerCase();
 
       let typeMatch =
         selectedTypes.length === 0 || selectedTypes.includes(propertyType);
+
+      let locationMatch =
+        locationQuery === "" || propertyState.includes(locationQuery);
 
       let priceMatch = false;
       switch (priceFilter) {
@@ -82,7 +141,7 @@ document.addEventListener("DOMContentLoaded", function () {
           priceMatch = true;
       }
 
-      if (typeMatch && priceMatch) {
+      if (typeMatch && priceMatch && locationMatch) {
         property.style.display = "";
       } else {
         property.style.display = "none";
@@ -90,20 +149,13 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Atualiza o valor do preço no carregamento da página
-  if (priceRangeInput && priceValue) {
-    priceValue.textContent =
-      "$" + Number(priceRangeInput.value).toLocaleString();
-    filterProperties();
-  }
+  // --- Event Listeners ---
 
-  // Adiciona o event listener para o input de range
   if (priceRangeInput) {
     priceRangeInput.addEventListener("input", function () {
       if (priceValue) {
         priceValue.textContent = "$" + Number(this.value).toLocaleString();
       }
-      // Força a seleção do rádio 'custom' ao mover o slider
       document.getElementById("custom").checked = true;
       filterProperties();
     });
@@ -121,16 +173,18 @@ document.addEventListener("DOMContentLoaded", function () {
     .querySelectorAll("#property-listings .property-card")
     .forEach((card) => {
       card.addEventListener("click", function () {
-        // Remove a classe 'active' de todos os cards
         document
           .querySelectorAll("#property-listings .property-card")
           .forEach((c) => c.classList.remove("active"));
-
-        // Adiciona a classe 'active' apenas no card clicado
         this.classList.add("active");
-
-        // Atualiza o painel de detalhes
-        updateDetails(this);
+        updateDetails(this.closest(".col-md-6"));
       });
     });
+
+  // --- Initial Load ---
+  if (priceRangeInput && priceValue) {
+    priceValue.textContent =
+      "$" + Number(priceRangeInput.value).toLocaleString();
+  }
+  filterProperties();
 });
